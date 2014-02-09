@@ -142,8 +142,12 @@ parse_args() {
 	eval set -- "${FLAGS_ARGV}"
 
 	# Read arguments into global variables
-	NAME=$1
-	BRANCH=$PREFIX$NAME
+	if [ -z $1 ]; then
+		VERSION=''
+	else
+		VERSION=$1
+	fi
+	BRANCH=$PREFIX$VERSION
 }
 
 require_no_existing_hotfix_branches() {
@@ -190,30 +194,30 @@ F,[no]fetch       Fetch from origin before performing local operation
 	fi
 
 	# Run filter on the version
-	NAME=$(run_filter_hook hotfix-start-version $NAME)
+	VERSION=$(run_filter_hook hotfix-start-version $VERSION)
 	if [ $? -eq 127 ]; then
-		die $NAME
+		die $VERSION
 	fi
 
-	# As NAME might have changed reset BRANCH with new NAME
-	BRANCH=$PREFIX$NAME
+	# As VERSION might have changed reset BRANCH with new VERSION
+	BRANCH=$PREFIX$VERSION
 
 	gitflow_require_version_arg
 	require_no_existing_hotfix_branches
 
 	# Sanity checks
 	require_branch_absent "$BRANCH"
-	require_tag_absent "$VERSION_PREFIX$NAME"
+	require_tag_absent "$VERSION_PREFIX$VERSION"
 	if git_remote_branch_exists "$ORIGIN/$base"; then
 		require_branches_equal "$base" "$ORIGIN/$base"
 	fi
 
-	run_pre_hook "$VERSION_PREFIX$NAME" "$ORIGIN" "$BRANCH" "$base"
+	run_pre_hook "$VERSION_PREFIX$VERSION" "$ORIGIN" "$BRANCH" "$base"
 
 	# Create branch
 	git_do checkout -b "$BRANCH" "$base"  || die "Could not create hotfix branch '$BRANCH'."
 
-	run_post_hook "$VERSION_PREFIX$NAME" "$ORIGIN" "$BRANCH" "$base"
+	run_post_hook "$VERSION_PREFIX$VERSION" "$ORIGIN" "$BRANCH" "$base"
 
 	echo
 	echo "Summary of actions:"
@@ -225,7 +229,7 @@ F,[no]fetch       Fetch from origin before performing local operation
 	echo "- Start committing your hot fixes"
 	echo "- When done, run:"
 	echo
-	echo "     git flow hotfix finish '$NAME'"
+	echo "     git flow hotfix finish '$VERSION'"
 	echo
 }
 
@@ -241,7 +245,10 @@ showcommands!     Show git commands while executing them
 	# Parse arguments
 	parse_args "$@"
 
-	gitflow_expand_nameprefix_arg_or_current
+	# Use current branch if no version is given
+	if [ "$VERSION" = "" ]; then
+		gitflow_use_current_branch_version
+	fi
 
 	# Sanity checks
 	require_clean_working_tree
@@ -249,7 +256,7 @@ showcommands!     Show git commands while executing them
 	git_do fetch -q "$ORIGIN" || die "Could not fetch branch '$BRANCH' from remote '$ORIGIN'."
 	require_branch_absent "$ORIGIN/$BRANCH"
 
-	run_pre_hook "$VERSION_PREFIX$NAME" "$ORIGIN" "$BRANCH"
+	run_pre_hook "$VERSION_PREFIX$VERSION" "$ORIGIN" "$BRANCH"
 
 	# Create remote branch
 	git_do push "$ORIGIN" "$BRANCH:refs/heads/$BRANCH"
@@ -260,7 +267,7 @@ showcommands!     Show git commands while executing them
 	git_do config "branch.$BRANCH.merge" "refs/heads/$BRANCH"
 	git_do checkout "$BRANCH" || die "Could not check out branch '$BRANCH'."
 
-	run_post_hook "$VERSION_PREFIX$NAME" "$ORIGIN" "$BRANCH"
+	run_post_hook "$VERSION_PREFIX$VERSION" "$ORIGIN" "$BRANCH"
 
 	echo
 	echo "Summary of actions:"
@@ -268,6 +275,54 @@ showcommands!     Show git commands while executing them
 	echo "- The local branch '$BRANCH' was configured to track the remote branch"
 	echo "- You are now on branch '$(git_current_branch)'"
 	echo
+}
+
+cmd_rebase() {
+	OPTIONS_SPEC="\
+git flow hotfix rebase [-h] [-i] [-p] [<name|nameprefix>]
+
+Rebase <name> on <base_branch>
+--
+h,help!                Show this help
+showcommands!          Show git commands while executing them
+i,[no]interactive      Do an interactive rebase
+p,[no]preserve-merges  Preserve merges
+"
+	local opts
+
+	# Define flags
+	DEFINE_boolean 'interactive' false 'do an interactive rebase' i
+	DEFINE_boolean 'preserve-merges' false 'try to recreate merges' p
+
+	# Override defaults with values from config
+	gitflow_override_flag_boolean   "hotfix.rebase.interactive"       "interactive"
+	gitflow_override_flag_boolean   "hotfix.rebase.preserve-merges"   "preserve_merges"
+
+	# Parse arguments
+	parse_args "$@"
+
+	# Use current branch if no version is given
+	if [ "$VERSION" = "" ]; then
+		gitflow_use_current_branch_version
+	fi
+
+	BASE_BRANCH=$(gitflow_config_get_base_branch $BRANCH)
+	BASE_BRANCH=${BASE_BRANCH:-$DEVELOP_BRANCH}
+
+	warn "Will try to rebase '$NAME' which is based on '$BASE_BRANCH'..."
+	require_clean_working_tree
+	require_branch "$BRANCH"
+
+    git_local_branch_exists "$BASE_BRANCH" || die "The base '$BASE_BRANCH' doesn't exists locally or is not a branch. Can't rebase the hotfixe branch '$BRANCH'."
+
+	git_do checkout -q "$BRANCH"  || die "Could not check out branch '$BRANCH'."
+	if flag interactive; then
+		opts="$opts -i"
+	fi
+	if flag preserve_merges; then
+		opts="$opts -p"
+	fi
+	git_do rebase $opts "$BASE_BRANCH"
 }
 
 cmd_track() {
@@ -354,9 +409,13 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 	# Parse arguments
 	parse_args "$@"
 
+	# Use current branch if no version is given
+	if [ "$VERSION" = "" ]; then
+		gitflow_use_current_branch_version
+	fi
+
 	remotebranchdeleted=$FLAGS_FALSE
 	localbranchdeleted=$FLAGS_FALSE
-	gitflow_expand_nameprefix_arg_or_current
 
 	# Handle flags that imply other flags
 	if [ "$FLAGS_signingkey" != "" ]; then
@@ -428,13 +487,13 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 	if noflag notag; then
 		# We ask for a tag, be sure it does not exists or
 		# points to the latest hotfix commit
-		if git_tag_exists "$VERSION_PREFIX$NAME"; then
-			git_compare_refs  "$BRANCH" "$VERSION_PREFIX$NAME"^2 2>/dev/null
+		if git_tag_exists "$VERSION_PREFIX$VERSION"; then
+			git_compare_refs  "$BRANCH" "$VERSION_PREFIX$VERSION"^2 2>/dev/null
 			[ $? -eq 0 ] || die "Tag already exists and does not point to hotfix branch '$BRANCH'"
 		fi
 	fi
 
-	run_pre_hook "$VERSION_PREFIX$NAME" "$ORIGIN" "$BRANCH"
+	run_pre_hook "$VERSION_PREFIX$VERSION" "$ORIGIN" "$BRANCH"
 
 	# Try to merge into BASE.
 	# In case a previous attempt to finish this release branch has failed,
@@ -449,7 +508,7 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 		# Try to tag the release.
 		# In case a previous attempt to finish this release branch has failed,
 		# but the tag was set successful, we skip it now
-		if ! git_tag_exists "$VERSION_PREFIX$NAME"; then
+		if ! git_tag_exists "$VERSION_PREFIX$VERSION"; then
 			if [ "$FLAGS_message" != "" ] && [ "$FLAGS_messagefile" != "" ]; then
 				die "Use either -m,--message or -f,--messagefile. Can not use both options at the same time"
 			fi
@@ -458,11 +517,11 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 			[ "$FLAGS_signingkey" != "" ] && opts="$opts -u '$FLAGS_signingkey'"
 			if [ "$FLAGS_message" != "" ]; then
 				# Run filter on the tag message
-				FLAGS_message=$(run_filter_hook hotfix-finish-tag-message "${FLAGS_message}" "$VERSION_PREFIX$NAME")
+				FLAGS_message=$(run_filter_hook hotfix-finish-tag-message "${FLAGS_message}" "$VERSION_PREFIX$VERSION")
 				opts="$opts -m '$FLAGS_message'"
 			fi
 			[ "$FLAGS_messagefile" != "" ] && opts="$opts -F '$FLAGS_messagefile'"
-			eval git_do tag $opts "$VERSION_PREFIX$NAME" || die "Tagging failed. Please run finish again to retry."
+			eval git_do tag $opts "$VERSION_PREFIX$VERSION" || die "Tagging failed. Please run finish again to retry."
 		fi
 	fi
 
@@ -485,7 +544,7 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 				# Accounting for 'git describe', if a release is tagged
 				# we use the tag commit instead of the branch.
 				if noflag notag; then
-					commit="$VERSION_PREFIX$NAME"
+					commit="$VERSION_PREFIX$VERSION"
 				else
 					commit="$BASE_BRANCH"
 				fi
@@ -498,7 +557,7 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 		fi
 	fi
 
-	run_post_hook "$VERSION_PREFIX$NAME" "$ORIGIN" "$BRANCH"
+	run_post_hook "$VERSION_PREFIX$VERSION" "$ORIGIN" "$BRANCH"
 
 	# Delete branch
 	if noflag keep; then
@@ -546,11 +605,11 @@ b,[no]nobackmerge     Don't back-merge master, or tag if applicable, in develop
 	fi
 	echo "- Hotfix branch '$BRANCH' has been merged into '$BASE_BRANCH'"
 	if noflag notag; then
-		echo "- The hotfix was tagged '$VERSION_PREFIX$NAME'"
+		echo "- The hotfix was tagged '$VERSION_PREFIX$VERSION'"
 	fi
 	if [ "$BASE_BRANCH" = "$MASTER_BRANCH" ]; then
 		[ "$commit" = "$BASE_BRANCH" ] && echo "- Master branch '$BASE_BRANCH' has been back-merged into '$DEVELOP_BRANCH'"
-		[ "$commit" = "$VERSION_PREFIX$NAME" ] && echo "- Hotfix tag '$VERSION_PREFIX$NAME' has been back-merged into '$DEVELOP_BRANCH'"
+		[ "$commit" = "$VERSION_PREFIX$VERSION" ] && echo "- Hotfix tag '$VERSION_PREFIX$VERSION' has been back-merged into '$DEVELOP_BRANCH'"
 		[ "$commit" = "$BRANCH" ] && echo "- Hotfix branch '$BRANCH' has been merged into '$DEVELOP_BRANCH'"
 	fi
 	if noflag keep; then
@@ -607,12 +666,12 @@ r,[no]remote          Delete remote branch
 	# Parse arguments
 	parse_args "$@"
 
-	gitflow_expand_nameprefix_arg_or_current
+	gitflow_require_version_arg
 
 	# Sanity checks
 	require_branch "$BRANCH"
 
-	run_pre_hook "$NAME" "$ORIGIN" "$BRANCH"
+	run_pre_hook "$VERSION" "$ORIGIN" "$BRANCH"
 
 	current_branch=$(git_current_branch)
 	# We can't delete a branch we are on, switch to the master branch.
@@ -638,7 +697,7 @@ r,[no]remote          Delete remote branch
 	fi
 
 	gitflow_config_remove_base_section "$BRANCH"
-	run_post_hook "$NAME" "$ORIGIN" "$BRANCH"
+	run_post_hook "$VERSION" "$ORIGIN" "$BRANCH"
 
 	echo
 	echo "Summary of actions:"
