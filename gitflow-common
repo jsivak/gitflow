@@ -9,7 +9,7 @@
 #    http://github.com/petervanderdoes/gitflow
 #
 # Authors:
-# Copyright 2012,2013 Peter van der Does. All rights reserved.
+# Copyright 2012-2014 Peter van der Does. All rights reserved.
 #
 # Original Author:
 # Copyright 2010 Vincent Driessen. All rights reserved.
@@ -253,7 +253,11 @@ git_fetch_branch() {
 	[ -n "$2" ] || die "Missing branch name"
 	origin="$1"
 	branch="$2"
-	git_do fetch -q "$origin" "$branch":refs/remotes/"$origin"/"$branch" || die "Could not fetch $branch from $origin."
+	if git_remote_branch_exists "$origin/$branch"; then
+		git_do fetch -q "$origin" "$branch":refs/remotes/"$origin"/"$branch" || die "Could not fetch $branch from $origin."
+	else
+		warn "Trying to fetch branch '$origin/$branch' but it does not exist."
+	fi
 }
 
 #
@@ -292,7 +296,7 @@ gitflow_is_initialized() {
 
 # Loading settings that can be overridden using git config
 gitflow_load_settings() {
-	export GIT_CURRENT_REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null)
+	export GIT_CURRENT_REPO_DIR="$(git rev-parse --show-toplevel 2>/dev/null)"
 	export DOT_GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
 	export HOOKS_DIR=$(git config --get gitflow.path.hooks || echo "$DOT_GIT_DIR"/hooks) # the second option is used to support previous versions of git-flow
 	export MASTER_BRANCH=$(git config --get gitflow.branch.master)

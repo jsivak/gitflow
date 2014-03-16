@@ -9,7 +9,7 @@
 #    http://github.com/petervanderdoes/gitflow
 #
 # Authors:
-# Copyright 2012,2013 Peter van der Does. All rights reserved.
+# Copyright 2012-2014 Peter van der Does. All rights reserved.
 #
 # Original Author:
 # Copyright 2010 Vincent Driessen. All rights reserved.
@@ -140,15 +140,15 @@ parse_args() {
 
 	# Read arguments into global variables
 	if [ -z $1 ]; then
-		REMOTE=''
+		VERSION=''
 	else
-		REMOTE=$1
+		VERSION=$1
 	fi
 
 	if [ -z $2 ]; then
-		NAME=''
+		BASE=''
 	else
-		NAME=$2
+		BASE=$2
 	fi
 	BRANCH=$PREFIX$VERSION
 }
