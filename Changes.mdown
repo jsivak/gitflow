@@ -19,10 +19,20 @@
 [jsivak]: https://github.com/jsivak
 [OpherV]: https://github.com/OpherV
 [craigfowler]: https://github.com/craigfowler
+[havvg]: https://github.com/havvg
+[algernon]: https://github.com/algernon
  
 # Changelog
 
-#### 1.8.0-dev.42
+#### 1.9.0-dev.9
+[Peter van der Does][petervanderdoes]
+* Repositories with spaces in path cause the pre * post hook to fail
+* Error using git flow log.
+
+[Gergely Nagy][algernon]
+* Remove bash code.
+
+#### 1.8.0
 [Peter van der Does][petervanderdoes]
 * Add rebase action to release, hotfix and support.
 * Shortcut for rebase commands.  
@@ -45,6 +55,9 @@
 
 [Craig Fowler][craigfowler]
 * 'export' fails in 'gitflow_load_settings()'
+
+[Toni Uebernickel][havvg]
+* Add log command
 
 #### 1.7.0
 [Peter van der Does][petervanderdoes]
